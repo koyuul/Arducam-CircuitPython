@@ -6,7 +6,7 @@ This was built for and tested on Google Coral, however I'd guess it'd work on ot
 It is likely possible/better to port over ArduCam's SDK somehow, but I never got a response from their suppport email so this seemed like the best alternative. If anyone has any advice on that... also let me know!
 
 ### How to use
-Just execute the `main.py` file. Be sure to change the pins to however you set your board up. The default setup uses `SPI0` and pin 37 for the GPIO pin. Currently this only snaps a single image, but should be implemented easily enough.
+Just execute the `main.py` file. Be sure to change the pins to however you set your board up. The default setup uses `SPI0` and pin 37 for the GPIO pin. Currently this only snaps a single image, but other versions should be implemented easily enough.
 
 ### Also Experimental
 Similar to the repo this branches from, it's still extremely experimental at this point. Just wanted to upload this incase anyone is/was in my position.
