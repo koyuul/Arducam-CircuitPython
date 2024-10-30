@@ -1,46 +1,39 @@
-# Arducam port to Pico
+import board
+import busio
+from digitalio import DigitalInOut, Direction
+from time import sleep
+from camera import *
+# These work for Google Coral. Please refer to your board's pinout and your wiring to match.
+# You can also try print(dir(board)) to view what you have.
+CLOCK_PIN = board.ECSPI1_SCLK
+MISO_PIN = board.ECSPI1_MISO
+MOSI_PIN = board.ECSPI1_MOSI
+GPIO_PIN = board.GPIO_P37
 
-from machine import Pin, SPI, reset
-# Developing on 1.19
+BAUDRATE = 8000000
 
-'''
-#################### PINOUT ####################
-Camera pin - Pico Pin
-VCC - 3V3
-GND - GND
-SCK - GP18 - white
-MISO - RX - GP16 - brown
-MOSI - TX - GP19 - yellow
-CS - GP17 - orange
-'''
+# refer to camera.py for possible resolutions
+USER_RES = '1920x1080'
 
+spi = busio.SPI(clock=CLOCK_PIN, MISO=MISO_PIN, MOSI=MOSI_PIN)
 
-################################################################## CODE ACTUAL ##################################################################
-spi = SPI(0,sck=Pin(18), miso=Pin(16), mosi=Pin(19), baudrate=8000000)
-cs = Pin(17, Pin.OUT)
+# Lock SPI bus before configuring baudrate
+if spi.try_lock():
+    try:
+        spi.configure(baudrate=BAUDRATE)
+    finally:
+        spi.unlock()
+else:
+    print("Could not lock SPI bus")
+    exit()
 
-# button = Pin(15, Pin.IN,Pin.PULL_UP)
-onboard_LED = Pin(25, Pin.OUT)
+cs = DigitalInOut(GPIO_PIN)
+cs.direction = digitalio.Direction.OUTPUT  # Set CS pin as output
 
 cam = Camera(spi, cs)
 
-cam.resolution = '640x480'
-# cam.set_filter(cam.SPECIAL_REVERSE)
-cam.set_brightness_level(cam.BRIGHTNESS_PLUS_4)
-cam.set_contrast(cam.CONTRAST_MINUS_3)
+cam.resolution = USER_RES
 
-
-onboard_LED.on()
 cam.capture_jpg()
-sleep_ms(50)
+sleep(0.05)
 cam.saveJPG('image.jpg')
-onboard_LED.off()
-
-
-#################################################################################################################################################
-'''
-Benchmarks
-- Default SPI speed (1000000?), cam.resolution = '640X480', no burst read (camera pointed at roof) ==== TIME: ~7.8 seconds
-- Increased speed (8000000), cam.resolution = '640X480', no burst read (camera pointed at roof) ==== TIME: ~7.3 seconds
-
-'''

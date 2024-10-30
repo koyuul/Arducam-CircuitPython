@@ -1,8 +1,9 @@
-from utime import sleep_ms
-import utime
-
-import uos
-import ujson
+import time
+import os
+import json
+import board
+import busio
+import digitalio
 
 '''
 Start this alongside the camera module to save photos in a folder with a filename i.e. image-<counter>.jpg
@@ -13,17 +14,16 @@ class FileManager:
         
         self.FILE_MANAGER_LOG_NAME = file_manager_name
         self.last_request_filename = None
-        self.suffix = None
-        count = 0
         file_dict = {}
+
         # Ensure file is present
-        if self.FILE_MANAGER_LOG_NAME not in uos.listdir():
+        if self.FILE_MANAGER_LOG_NAME not in os.listdir():
             with open(self.FILE_MANAGER_LOG_NAME, 'w') as f:
-                f.write(ujson.dumps(file_dict))
+                json.dump(file_dict, f)
             
         # Check if the filename already exists in the storage
         with open(self.FILE_MANAGER_LOG_NAME, 'r') as f:
-            self.file_dict = ujson.loads(f.read())
+            self.file_dict = json.load(f)
 
 
     def new_jpg_fn(self, requested_filename=None):
@@ -36,7 +36,7 @@ class FileManager:
         count = 0
         self.last_request_filename = requested_filename
         
-        if requested_filename == None and self.last_request_filename == None:
+        if requested_filename is None and self.last_request_filename is None:
             raise Exception('Please enter a filename for the first use of the function')
         
         if requested_filename in self.file_dict:
@@ -51,7 +51,7 @@ class FileManager:
     def save_manager_file(self):
         # Save the updated list back to the storage
         with open(self.FILE_MANAGER_LOG_NAME, 'w') as f:
-            f.write(ujson.dumps(self.file_dict))
+            json.dump(self.file_dict, f)
 
 
 
@@ -263,6 +263,7 @@ class Camera:
 ########### CORE PHOTO FUNCTIONS ###########
     def __init__(self, spi_bus, cs, skip_sleep=False, debug_information=False):
         self.cs = cs
+        self.cs.value=True
         self.spi_bus = spi_bus
 
         self._write_reg(self.CAM_REG_SENSOR_RESET, self.CAM_SENSOR_RESET_ENABLE) # Reset camera
@@ -292,11 +293,9 @@ class Camera:
         self.image_buffer = bytearray(self.BUFFER_MAX_LENGTH)
         self.valid_image_buffer = 0
         
-        self.camera_idx = 'NOT DETECTED'
-        
         
         # Tracks the AWB warmup time
-        self.start_time = utime.ticks_ms()
+        self.start_time = time.monotonic() * 1000  # Use monotonic for timing
         if debug_information:
             print('Camera version =', self.camera_idx)
         if self.camera_idx == '3MP':
@@ -311,7 +310,7 @@ class Camera:
         print('Running 3MP startup routine')
         self.capture_jpg()
         self.saveJPG('dummy_image.jpg')
-        uos.remove('dummy_image.jpg')
+        os.remove('dummy_image.jpg')
         print('complete')
 
     '''
@@ -319,36 +318,33 @@ class Camera:
     Issue error if the filetype is NOT .jpg
     '''
     def capture_jpg(self):
-
-        if (utime.ticks_diff(utime.ticks_ms(), self.start_time) <= self.WHITE_BALANCE_WAIT_TIME_MS) and self.camera_idx == '5MP':
+        if (time.monotonic() - self.start_time <= self.WHITE_BALANCE_WAIT_TIME_MS / 1000) and self.camera_idx == '5MP':
             print('Please add a ', self.WHITE_BALANCE_WAIT_TIME_MS, 'ms delay to allow for white balance to run')
         else:
-#             print('Starting capture JPG')
+            print('Starting capture JPG')
             # JPG, bmp ect
             # TODO: PROPERTIES TO CONFIGURE THE PIXEL FORMAT
             if (self.old_pixel_format != self.current_pixel_format) or self.run_start_up_config:
                 self.old_pixel_format = self.current_pixel_format
                 self._write_reg(self.CAM_REG_FORMAT, self.current_pixel_format) # Set to capture a jpg
                 self._wait_idle()
-#             print('old',self.old_resolution,'new',self.current_resolution_setting)
+                print('old',self.old_resolution,'new',self.current_resolution_setting)
                 # TODO: PROPERTIES TO CONFIGURE THE RESOLUTION
             if (self.old_resolution != self.current_resolution_setting) or self.run_start_up_config:
                 self.old_resolution = self.current_resolution_setting
                 self._write_reg(self.CAM_REG_CAPTURE_RESOLUTION, self.current_resolution_setting)
-#                 print('setting res', self.current_resolution_setting)
+                print('setting res', self.current_resolution_setting)
                 self._wait_idle()
             self.run_start_up_config = False
             
             # Start capturing the photo
             self._set_capture()
-#             print('capture jpg complete')
-        
 
     # TODO: After reading the camera data clear the FIFO and reset the camera (so that the first time read can be used)
+    # TODO: ! Look into batch reading
     def saveJPG(self,filename):
         headflag = 0
         print('Saving image, please dont remove power')
-#         print('rec len:', self.received_length)
         
         image_data = 0x00
         image_data_next = 0x00
@@ -356,34 +352,31 @@ class Camera:
         image_data_int = 0x00
         image_data_next_int = 0x00
         
-        print(self.received_length)
-        
+        print("Image length: ", self.received_length)
         while(self.received_length):
-            
             image_data = image_data_next
             image_data_int = image_data_next_int
             
             image_data_next = self._read_byte()
-            image_data_next_int = int.from_bytes(image_data_next, 1) # TODO: CHANGE TO READ n BYTES
+            image_data_next_int = image_data_next # TODO: CHANGE TO READ n BYTES
+            
             if headflag == 1:
-                jpg_to_write.write(image_data_next)
+                jpg_to_write.write(bytes([image_data_next]))
             
             if (image_data_int == 0xff) and (image_data_next_int == 0xd8):
                 # TODO: Save file to filename
-#                 print('start of file')
+                print("Beginning write at " + filename)
                 headflag = 1
-                jpg_to_write = open(filename,'ab')
-                jpg_to_write.write(image_data)
-                jpg_to_write.write(image_data_next)
+                jpg_to_write = open(filename,'wb')
+                jpg_to_write.write(bytes([image_data]))
+                jpg_to_write.write(bytes([image_data_next]))
                 
             if (image_data_int == 0xff) and (image_data_next_int == 0xd9):
-#                 print('TODO: Save and close file?')
+                print("Save complete")
                 headflag = 0
-                jpg_to_write.write(image_data_next)
+                jpg_to_write.write(bytes([image_data_next]))
                 jpg_to_write.close()
-
-
-
+                return
 
 
     def save_JPG_burst(self):
@@ -396,7 +389,7 @@ class Camera:
         image_data_int = 0x00
         image_data_next_int = 0x00
 
-        print(self.received_length)
+        print("Image length: ", self.received_length)
 
         while(self.received_length):
             self._burst_read_FIFO()
@@ -422,7 +415,7 @@ class Camera:
             burst_read_length = self.received_length
         current_buffer_byte = 0
         
-        self.cs.off()
+        self.cs.value = False
         self.spi_bus.write(bytes([self.BURST_FIFO_READ]))
         
         data = self.spi_bus.read(1)
@@ -440,7 +433,7 @@ class Camera:
             current_buffer_byte += 1
             burst_read_length -= 1
 
-        self.cs.on()
+        self.cs.value = True
         self.received_length -= burst_read_length
         self.valid_image_buffer = burst_read_length
 
@@ -448,15 +441,21 @@ class Camera:
     @property
     def resolution(self):
         return self.current_resolution_setting
+
     @resolution.setter
     def resolution(self, new_resolution):
-        input_string_lower = new_resolution.lower()        
+        print("Updating resolution to " + new_resolution)
+        print(self.camera_idx)
+        input_string_lower = new_resolution.lower()
         if self.camera_idx == '3MP':
             if input_string_lower in self.valid_3mp_resolutions:
-                self.current_resolution_setting = self.valid_5mp_resolutions[input_string_lower]
+                print(self.current_resolution_setting)
+                self.current_resolution_setting = self.valid_3mp_resolutions[input_string_lower]
+                print(self.current_resolution_setting)
+
             else:
                 raise ValueError("Invalid resolution provided for {}, please select from {}".format(self.camera_idx, list(self.valid_3mp_resolutions.keys())))
-
+        
         elif self.camera_idx == '5MP':
             if input_string_lower in self.valid_5mp_resolutions:
                 self.current_resolution_setting = self.valid_5mp_resolutions[input_string_lower]
@@ -572,7 +571,7 @@ class Camera:
 #         print('a2')
         while (int(self._get_bit(self.ARDUCHIP_TRIG, self.CAP_DONE_MASK)) == 0):
 #             print(self._get_bit(self.ARDUCHIP_TRIG, self.CAP_DONE_MASK))
-            sleep_ms(200)
+            time.sleep(0.2)
 #         print('a3')
         self.received_length = self._read_fifo_length()
         self.total_length = self.received_length
@@ -580,18 +579,20 @@ class Camera:
 #         print('a4')
     
     def _read_fifo_length(self): # TODO: CONFIRM AND SWAP TO A 3 BYTE READ
-        len1 = int.from_bytes(self._read_reg(self.FIFO_SIZE1),1)
-        len2 = int.from_bytes(self._read_reg(self.FIFO_SIZE2),1)
-        len3 = int.from_bytes(self._read_reg(self.FIFO_SIZE3),1)
+        len1 = self._read_reg(self.FIFO_SIZE1)
+        len2 = self._read_reg(self.FIFO_SIZE2)
+        len3 = self._read_reg(self.FIFO_SIZE3)
 #         print(len1,len2,len3)
         return ((len3 << 16) | (len2 << 8) | len1) & 0xffffff
 
     def _get_sensor_config(self):
-        camera_id = self._read_reg(self.CAM_REG_SENSOR_ID);
+        camera_id = self._read_reg(self.CAM_REG_SENSOR_ID)
+        # print(type(camera_id), camera_id)  # Debugging line
+        print(camera_id == self.SENSOR_3MP_1)
         self._wait_idle()
-        if (int.from_bytes(camera_id, 1) == self.SENSOR_3MP_1) or (int.from_bytes(camera_id, 1) == self.SENSOR_3MP_2):
+        if (camera_id == self.SENSOR_3MP_1) or (camera_id == self.SENSOR_3MP_2):
             self.camera_idx = '3MP'
-        if (int.from_bytes(camera_id, 1) == self.SENSOR_5MP_1) or (int.from_bytes(camera_id, 1) == self.SENSOR_5MP_2):
+        if (camera_id == self.SENSOR_5MP_1) or (camera_id == self.SENSOR_5MP_2):
             self.camera_idx = '5MP'
 
 
@@ -601,20 +602,21 @@ class Camera:
         print('COMPLETE')
 
     def _bus_write(self, addr, val):
-        self.cs.off()
+        self.cs.value = False
         self.spi_bus.write(bytes([addr]))
         self.spi_bus.write(bytes([val])) # FixMe only works with single bytes
-        self.cs.on()
-        sleep_ms(1) # From the Arducam Library
+        self.cs.value = True
+        time.sleep(0.001) # From the Arducam Library
         return 1
     
     def _bus_read(self, addr):
-        self.cs.off()
+        self.cs.value = False
         self.spi_bus.write(bytes([addr]))
-        data = self.spi_bus.read(1) # Only read second set of data
-        data = self.spi_bus.read(1)
-        self.cs.on()
-        return data
+
+        buffer = bytearray(2)
+        data = self.spi_bus.readinto(buffer) # Only read second set of data
+        self.cs.value = True
+        return buffer[1]
 
     def _write_reg(self, addr, val):
         self._bus_write(addr | 0x80, val)
@@ -624,23 +626,38 @@ class Camera:
         return data # TODO: Check that this should return raw bytes or int (int.from_bytes(data, 1))
 
     def _read_byte(self):
-        self.cs.off()
-        self.spi_bus.write(bytes([self.SINGLE_FIFO_READ]))
-        data = self.spi_bus.read(1)
-        data = self.spi_bus.read(1)
-        self.cs.on()
-        self.received_length -= 1
-        return data
+        self.cs.value = False  # Pull CS low to select the device
+        self.spi_bus.write(bytes([self.SINGLE_FIFO_READ]))  # Send the read command
+
+        # Read the first dummy byte
+        dummy_buffer = bytearray(1)
+        self.spi_bus.readinto(dummy_buffer)  # Read a dummy byte to receive the response
+
+        # Now read the actual byte
+        data_buffer = bytearray(1)
+        self.spi_bus.readinto(data_buffer)  # Read the actual data byte
+
+        self.cs.value = True  # Pull CS high to deselect the device
+        self.received_length -= 1  # Decrement the received length
+        return data_buffer[0]  # Return the read byte
     
     def _wait_idle(self):
         data = self._read_reg(self.CAM_REG_SENSOR_STATE)
-        while ((int.from_bytes(data, 1) & 0x03) == self.CAM_REG_SENSOR_STATE_IDLE):
-            data = self._read_reg(self.CAM_REG_SENSOR_STATE)
-            sleep_ms(2)
+        # Ensure data is in bytes; if it’s not, handle it accordingly
+        if isinstance(data, bytes):
+            while (int.from_bytes(data, 'little') & 0x03) == self.CAM_REG_SENSOR_STATE_IDLE:
+                data = self._read_reg(self.CAM_REG_SENSOR_STATE)
+                time.sleep(0.002) # From the Arducam Library
+                
+        else:
+            # If data is not in bytes, just compare it directly
+            while (data & 0x03) == self.CAM_REG_SENSOR_STATE_IDLE:
+                data = self._read_reg(self.CAM_REG_SENSOR_STATE)
+                time.sleep(0.002) # From the Arducam Library
 
     def _get_bit(self, addr, bit):
         data = self._read_reg(addr);
-        return int.from_bytes(data, 1) & bit;
+        return data & bit;
 
 
 
