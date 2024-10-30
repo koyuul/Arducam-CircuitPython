@@ -1,12 +1,12 @@
-## NOTE
+# NOTE
 This is a branch from Core Electronic's MicroPython Repo, porting it over to CircuitPython. 
 
-This was built for and tested on Google Coral, however I'd guess it'd work on other linux SBC's (if using a Pi use ArduCam's drivers). 
+This was built for and tested on Google Coral, however I'd guess it'd work on other linux SBC's (if using a Pi use ArduCam's drivers). If you do get it to work on a different board let me know! 
 
-It is likely possible to port over ArduCam's SDK somehow, but I never got a response from their suppport email so this seemed like the best alternative.
+It is likely possible/better to port over ArduCam's SDK somehow, but I never got a response from their suppport email so this seemed like the best alternative. If anyone has any advice on that... also let me know!
 
 ### How to use
-Just execute the `main.py` file. Be sure to change the pins to however you set your board up. The default setup uses `SPI0` and pin 37 for the GPIO pin. 
+Just execute the `main.py` file. Be sure to change the pins to however you set your board up. The default setup uses `SPI0` and pin 37 for the GPIO pin. Currently this only snaps a single image, but should be implemented easily enough.
 
 ### Also Experimental
 Similar to the repo this branches from, it's still extremely experimental at this point. Just wanted to upload this incase anyone is/was in my position.
@@ -15,6 +15,7 @@ Current drawback/room for improvement:
 - Capturing anything higher than 480p is EXTREMELY slow. should be fixable
 - Still lacks a couple of features that Arducam's drivers do, Core Electronic's port doesn't yet have them implemented either.
 - Honestly code is kind of a mess (my fault). a good starting point though!
+- camera.py code for burst images haven't been looked at. Will need to be changed if you want to use it.
 
 ### future task list
 - [ ] decrease save time (by batching)
@@ -23,10 +24,9 @@ Current drawback/room for improvement:
 - [ ] clean up print statements, make optional?
 - [ ] work this into our cpp project strcuture (personal proj)
 - [ ] figure out how this is gonna work with multiple cams...
-- [ ] keep in check with CoreElectronic's version
+- [ ] keep in check with CoreElectronic's version (tackle some of their TODOs?)
 
-## ORIGINAL REPO's README (REFER TO THEIR REPO FOR MOST UPDATED README):
----
+# ORIGINAL REPO's README (REFER TO THEIR REPO FOR MOST UPDATED README):
 This is the Repo for the Core Electronics port of the Arducam Mega Cameras for the Raspberry Pi Pico (Micropython)
 * [ArduCam Mega 5MP Camera](https://core-electronics.com.au/arducam-mega-5mp-camera.html)
 * [ArduCam Mega 3MP Camera](https://core-electronics.com.au/arducam-mega-3mp-camera.html)
