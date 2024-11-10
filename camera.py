@@ -29,9 +29,6 @@ class FileManager:
     def new_jpg_fn(self, requested_filename=None):
         return (self.new_filename(requested_filename) + '.jpg')
     
-#     def new_fn_custom(self, suffix, requested_filename=None, suffix):
-#         return (self.new_filename(requested_filename) + suffix)
-        
     def new_filename(self, requested_filename):
         count = 0
         self.last_request_filename = requested_filename
@@ -56,11 +53,6 @@ class FileManager:
 
 
 class Camera:
-    # Required imports
-    
-    ### Register definitions
-
-
     ## For camera Reset
     CAM_REG_SENSOR_RESET = 0x07
     CAM_SENSOR_RESET_ENABLE = 0x40
@@ -72,8 +64,6 @@ class Camera:
     SENSOR_3MP_1 = 0x82
     SENSOR_5MP_2 = 0x83
     SENSOR_3MP_2 = 0x84
-    
-    ## Camera effect control
     
     # Set Colour Effect
     CAM_REG_COLOR_EFFECT_CONTROL = 0x27
@@ -191,12 +181,9 @@ class Camera:
     CAM_REG_CAPTURE_RESOLUTION = 0x21
 
     # Some resolutions are not available - refer to datasheet https://www.arducam.com/downloads/datasheet/Arducam_MEGA_SPI_Camera_Application_Note.pdf
-#     RESOLUTION_160X120 = 0X00
     RESOLUTION_320X240 = 0X01
     RESOLUTION_640X480 = 0X02
-#     RESOLUTION_800X600 = 0X03
     RESOLUTION_1280X720 = 0X04
-#     RESOLUTION_1280X960 = 0X05
     RESOLUTION_1600X1200 = 0X06
     RESOLUTION_1920X1080 = 0X07
     RESOLUTION_2048X1536 = 0X08 # 3MP only
@@ -311,7 +298,7 @@ class Camera:
         self.capture_jpg()
         self.saveJPG('dummy_image.jpg')
         os.remove('dummy_image.jpg')
-        print('complete')
+        print('Startup routine complete')
 
     '''
     Issue warning if the filepath doesnt end in .jpg (Blank) and append
@@ -321,19 +308,18 @@ class Camera:
         if (time.monotonic() - self.start_time <= self.WHITE_BALANCE_WAIT_TIME_MS / 1000) and self.camera_idx == '5MP':
             print('Please add a ', self.WHITE_BALANCE_WAIT_TIME_MS, 'ms delay to allow for white balance to run')
         else:
-            print('Starting capture JPG')
             # JPG, bmp ect
             # TODO: PROPERTIES TO CONFIGURE THE PIXEL FORMAT
             if (self.old_pixel_format != self.current_pixel_format) or self.run_start_up_config:
                 self.old_pixel_format = self.current_pixel_format
                 self._write_reg(self.CAM_REG_FORMAT, self.current_pixel_format) # Set to capture a jpg
                 self._wait_idle()
-                print('old',self.old_resolution,'new',self.current_resolution_setting)
+                # print('old',self.old_resolution,'new',self.current_resolution_setting)
                 # TODO: PROPERTIES TO CONFIGURE THE RESOLUTION
             if (self.old_resolution != self.current_resolution_setting) or self.run_start_up_config:
                 self.old_resolution = self.current_resolution_setting
                 self._write_reg(self.CAM_REG_CAPTURE_RESOLUTION, self.current_resolution_setting)
-                print('setting res', self.current_resolution_setting)
+                print('Setting resolution to ', self.current_resolution_setting)
                 self._wait_idle()
             self.run_start_up_config = False
             
@@ -341,7 +327,6 @@ class Camera:
             self._set_capture()
 
     # TODO: After reading the camera data clear the FIFO and reset the camera (so that the first time read can be used)
-    # TODO: ! Look into batch reading
     def saveJPG(self,filename):
         headflag = 0
         print('Saving image, please dont remove power')
@@ -353,6 +338,7 @@ class Camera:
         image_data_next_int = 0x00
         
         print("Image length: ", self.received_length)
+        start_time = time.time()
         while(self.received_length):
             image_data = image_data_next
             image_data_int = image_data_next_int
@@ -365,37 +351,36 @@ class Camera:
             
             if (image_data_int == 0xff) and (image_data_next_int == 0xd8):
                 # TODO: Save file to filename
-                print("Beginning write at " + filename)
                 headflag = 1
                 jpg_to_write = open(filename,'wb')
                 jpg_to_write.write(bytes([image_data]))
                 jpg_to_write.write(bytes([image_data_next]))
                 
             if (image_data_int == 0xff) and (image_data_next_int == 0xd9):
-                print("Save complete")
                 headflag = 0
                 jpg_to_write.write(bytes([image_data_next]))
                 jpg_to_write.close()
+                print(f"Save at {filename} complete, took {time.time() - start_time:.4f} seconds to save image")
                 return
 
 
-    def save_JPG_burst(self):
-        headflag = 0
-        print('Saving image, please dont remove power')
+    # def save_JPG_burst(self):
+        # headflag = 0
+        # print('Saving image, please dont remove power')
 
-        image_data = 0x00
-        image_data_next = 0x00
+        # image_data = 0x00
+        # image_data_next = 0x00
 
-        image_data_int = 0x00
-        image_data_next_int = 0x00
+        # image_data_int = 0x00
+        # image_data_next_int = 0x00
 
-        print("Image length: ", self.received_length)
+        # print("Image length: ", self.received_length)
 
-        while(self.received_length):
-            self._burst_read_FIFO()
+        # while(self.received_length):
+        #     self._burst_read_FIFO()
             
-            start_bytes = self.image_buffer[0]
-            end_bytes = self.image_buffer[self.valid_image_buffer-1]
+        #     start_bytes = self.image_buffer[0]
+        #     end_bytes = self.image_buffer[self.valid_image_buffer-1]
             
         
 #     def _read_byte(self):
@@ -564,31 +549,27 @@ class Camera:
         self._write_reg(self.ARDUCHIP_FIFO, self.FIFO_START_MASK)
 
     def _set_capture(self):
-#         print('a1')
+        print('Starting capture JPG')
+        start_time = time.time()
         self._clear_fifo_flag()
         self._wait_idle()
         self._start_capture()
-#         print('a2')
         while (int(self._get_bit(self.ARDUCHIP_TRIG, self.CAP_DONE_MASK)) == 0):
-#             print(self._get_bit(self.ARDUCHIP_TRIG, self.CAP_DONE_MASK))
             time.sleep(0.2)
-#         print('a3')
         self.received_length = self._read_fifo_length()
         self.total_length = self.received_length
         self.burst_first_flag = False
-#         print('a4')
+        print(f"Capture complete, took {time.time() - start_time:.4f} seconds to save image")
     
     def _read_fifo_length(self): # TODO: CONFIRM AND SWAP TO A 3 BYTE READ
         len1 = self._read_reg(self.FIFO_SIZE1)
         len2 = self._read_reg(self.FIFO_SIZE2)
         len3 = self._read_reg(self.FIFO_SIZE3)
-#         print(len1,len2,len3)
         return ((len3 << 16) | (len2 << 8) | len1) & 0xffffff
 
     def _get_sensor_config(self):
         camera_id = self._read_reg(self.CAM_REG_SENSOR_ID)
         # print(type(camera_id), camera_id)  # Debugging line
-        print(camera_id == self.SENSOR_3MP_1)
         self._wait_idle()
         if (camera_id == self.SENSOR_3MP_1) or (camera_id == self.SENSOR_3MP_2):
             self.camera_idx = '3MP'
