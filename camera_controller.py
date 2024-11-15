@@ -81,14 +81,15 @@ class CameraController:
                     image_metadata = {
                         # image_id is automatically incrementally set
                         "image_path": "", # Temporarily unset until we find the image_id
-                        "request_time": datetime.fromtimestamp(request_epoch, tz=datetime.timezone.utc),
-                        "capture_time": datetime.fromtimestamp(capture_epoch, tz=datetime.timezone.utc),
+                        "request_epoch": request_epoch,
+                        "capture_epoch": capture_epochs,
                         "camera_soruce": 1, # TODO: this should change based on requested cameras
                     }
 
                     # Enter image metadata into the metadata table.
-                    self.cursor.execute("INSERT INTO metadata(image_path, request_time, capture_time, camera_source) VALUES(?, ?, ?, ?)",
-                        ( image_metadata["image_path"], image_metadata["request_time"], image_metadata["capture_time"], image_metadata["camera_source"] )
+                    self.cursor.execute(
+                        "INSERT INTO metadata(image_path, request_epoch, capture_epoch, camera_source) VALUES(?, ?, ?, ?)",
+                        ( image_metadata["image_path"], image_metadata["request_epoch"], image_metadata["capture_epoch"], image_metadata["camera_source"] )
                     )
 
                     # Get the image_id, create the path, and save it
@@ -103,6 +104,41 @@ class CameraController:
                     self.conn.commit()
 
                     print(f"Completed the request received at {request_epoch}, captured at {capture_epoch}. Saved into {image_path}.")
+            if (operation == "RETRIEVE)"):
+                !TODO! WE WRITE THIS NEXT!! :)
+    
+    def retrieve(self, image_id=None, request_epoch=None, capture_epoch=None, look_before_epoch=False, predicted_location=None):
+        if (image_id is not None):
+            self.cursor.execute(f"SELECT * FROM metadata WHERE image_id=?", (image_id))
+        else if (request_epoch is not None):
+            # Find closest desired timestamp. Need to find this first to get all images taken at that time (mult. cameras take images at once)
+            closest_result = None
+            if (look_before_epoch == True): # Find closest timestamp to given timestamp, before or after
+                self.cursor.execute("SELECT request_epoch FROM metadata ORDER BY ABS(request_epoch - ?) ASC LIMIT 1", (request_epoch))
+                closest_result = self.cursor.fetchone()
+            else: # Find closest timestamp at or after given timestamp
+                self.cursor.execute("SELECT request_epoch FROM metadata WHERE request_epoch >= ? ORDER BY request_epoch ASC LIMIT 1", (request_epoch))
+                closest_result = self.cursor.fetchone()
+            self.cursor.execute("SELECT * FROM metadata WHERE request_epoch = ?", (closest_result))
+        else if (capture_epoch is not None):
+                        closest_result = None
+            if (look_before_epoch == True): # Find closest timestamp to given timestamp, before or after
+                self.cursor.execute("SELECT capture_epoch FROM metadata ORDER BY ABS(capture_epoch - ?) ASC LIMIT 1", (capture_epoch))
+                closest_result = self.cursor.fetchone()
+            else: # Find closest timestamp at or after given timestamp
+                self.cursor.execute("SELECT capture_epoch FROM metadata WHERE capture_epoch >= ? ORDER BY capture_epoch ASC LIMIT 1", (capture_epoch))
+                closest_result = self.cursor.fetchone()
+            self.cursor.execute("SELECT * FROM metadata WHERE capture_epoch = ?", (closest_result))
+        else if (predicted_location is not None):
+            print("TODO: Handle this later...") # TODO: handle a predicted location
+        else:
+            print("TODO: Handle no filters...") # TODO: Handle no filters provided
+
+        results = self.cursor.fetchall()
+        return results # TODO: figure out how to return this 
+            
+
+
 
 
 cc = CameraController(["STD_CAPTURE|1000|1731042297"]) # Currently a hardcoded example command
