@@ -624,7 +624,7 @@ class Camera:
     
     def _wait_idle(self):
         data = self._read_reg(self.CAM_REG_SENSOR_STATE)
-        # Ensure data is in bytes; if it’s not, handle it accordingly
+        # Ensure data is in bytes; if itâ€™s not, handle it accordingly
         if isinstance(data, bytes):
             while (int.from_bytes(data, 'little') & 0x03) == self.CAM_REG_SENSOR_STATE_IDLE:
                 data = self._read_reg(self.CAM_REG_SENSOR_STATE)
@@ -639,6 +639,5 @@ class Camera:
     def _get_bit(self, addr, bit):
         data = self._read_reg(addr);
         return data & bit;
-
 
 
