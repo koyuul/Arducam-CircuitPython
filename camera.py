@@ -252,6 +252,7 @@ class Camera:
         self.cs = cs
         self.cs.value=True
         self.spi_bus = spi_bus
+        self.debug_information = debug_information
 
         self._write_reg(self.CAM_REG_SENSOR_RESET, self.CAM_SENSOR_RESET_ENABLE) # Reset camera
         self._wait_idle()
@@ -283,7 +284,7 @@ class Camera:
         
         # Tracks the AWB warmup time
         self.start_time = time.monotonic() * 1000  # Use monotonic for timing
-        if debug_information:
+        if self.debug_information:
             print('Camera version =', self.camera_idx)
         if self.camera_idx == '3MP':
             self.startup_routine_3MP()
@@ -294,11 +295,13 @@ class Camera:
 
     def startup_routine_3MP(self):
         # Leave the shutter open for some time seconds (i.e. take a few photos without saving)
-        print('Running 3MP startup routine')
+        if self.debug_information:
+            print('Running 3MP startup routine') 
         self.capture_jpg()
         self.saveJPG('dummy_image.jpg')
         os.remove('dummy_image.jpg')
-        print('Startup routine complete')
+        if self.debug_information:
+            print('Startup routine complete') 
 
     '''
     Issue warning if the filepath doesnt end in .jpg (Blank) and append
@@ -306,7 +309,7 @@ class Camera:
     '''
     def capture_jpg(self):
         if (time.monotonic() - self.start_time <= self.WHITE_BALANCE_WAIT_TIME_MS / 1000) and self.camera_idx == '5MP':
-            print('Please add a ', self.WHITE_BALANCE_WAIT_TIME_MS, 'ms delay to allow for white balance to run')
+            print('Please add a ', self.WHITE_BALANCE_WAIT_TIME_MS, 'ms delay to allow for white balance to run') 
         else:
             # JPG, bmp ect
             # TODO: PROPERTIES TO CONFIGURE THE PIXEL FORMAT
@@ -319,7 +322,8 @@ class Camera:
             if (self.old_resolution != self.current_resolution_setting) or self.run_start_up_config:
                 self.old_resolution = self.current_resolution_setting
                 self._write_reg(self.CAM_REG_CAPTURE_RESOLUTION, self.current_resolution_setting)
-                print('Setting resolution to ', self.current_resolution_setting)
+                if self.debug_information:
+                    print('Setting resolution to ', self.current_resolution_setting) 
                 self._wait_idle()
             self.run_start_up_config = False
             
@@ -329,15 +333,17 @@ class Camera:
     # TODO: After reading the camera data clear the FIFO and reset the camera (so that the first time read can be used)
     def saveJPG(self,filename):
         headflag = 0
-        print('Saving image, please dont remove power')
+        if self.debug_information:
+            print('Saving image, please dont remove power') 
         
         image_data = 0x00
         image_data_next = 0x00
         
         image_data_int = 0x00
         image_data_next_int = 0x00
-        
-        print("Image length: ", self.received_length)
+
+        if self.debug_information:
+            print("Image length: ", self.received_length) 
         start_time = time.time()
         while(self.received_length):
             image_data = image_data_next
@@ -360,7 +366,8 @@ class Camera:
                 headflag = 0
                 jpg_to_write.write(bytes([image_data_next]))
                 jpg_to_write.close()
-                print(f"Save at {filename} complete, took {time.time() - start_time:.4f} seconds to save image")
+                if self.debug_information:
+                    print(f"Save at {filename} complete, took {time.time() - start_time:.4f} seconds to save image") 
                 return
 
 
@@ -409,7 +416,8 @@ class Camera:
             self.image_buffer[current_buffer_byte] = data
             current_buffer_byte += 1
             burst_read_length -= 1
-            print('first burst read')
+            if self.debug_information:
+                print('first burst read') 
             
         
         while burst_read_length:
@@ -429,14 +437,17 @@ class Camera:
 
     @resolution.setter
     def resolution(self, new_resolution):
-        print("Updating resolution to " + new_resolution)
-        print(self.camera_idx)
+        if self.debug_information:
+            print("Updating resolution to " + new_resolution) 
+            print(self.camera_idx) 
         input_string_lower = new_resolution.lower()
         if self.camera_idx == '3MP':
             if input_string_lower in self.valid_3mp_resolutions:
-                print(self.current_resolution_setting)
+                if self.debug_information:
+                    print(self.current_resolution_setting) 
                 self.current_resolution_setting = self.valid_3mp_resolutions[input_string_lower]
-                print(self.current_resolution_setting)
+                if self.debug_information:
+                    print(self.current_resolution_setting) 
 
             else:
                 raise ValueError("Invalid resolution provided for {}, please select from {}".format(self.camera_idx, list(self.valid_3mp_resolutions.keys())))
@@ -533,7 +544,8 @@ class Camera:
         elif environment == 'home':
             register_value = self.WB_MODE_HOME
         elif self.camera_idx == '3MP':
-            print('TODO UPDATE: For best results set a White Balance setting')
+            if self.debug_information:
+                print('TODO UPDATE: For best results set a White Balance setting') 
 
         self.white_balance_mode = register_value
         self._write_reg(self.CAM_REG_WB_MODE_CONTROL, register_value)
@@ -549,7 +561,8 @@ class Camera:
         self._write_reg(self.ARDUCHIP_FIFO, self.FIFO_START_MASK)
 
     def _set_capture(self):
-        print('Starting capture JPG')
+        if self.debug_information:
+            print('Starting capture JPG') 
         start_time = time.time()
         self._clear_fifo_flag()
         self._wait_idle()
@@ -559,7 +572,8 @@ class Camera:
         self.received_length = self._read_fifo_length()
         self.total_length = self.received_length
         self.burst_first_flag = False
-        print(f"Capture complete, took {time.time() - start_time:.4f} seconds to save image")
+        if self.debug_information:
+            print(f"Capture complete, took {time.time() - start_time:.4f} seconds to save image") 
     
     def _read_fifo_length(self): # TODO: CONFIRM AND SWAP TO A 3 BYTE READ
         len1 = self._read_reg(self.FIFO_SIZE1)
@@ -580,7 +594,8 @@ class Camera:
 ##################### INTERNAL FUNCTIONS - LOW LEVEL #####################
 
     def _read_buffer(self):
-        print('COMPLETE')
+        if self.debug_information:
+            print('COMPLETE') 
 
     def _bus_write(self, addr, val):
         self.cs.value = False
