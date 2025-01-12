@@ -312,13 +312,10 @@ class Camera:
             print('Please add a ', self.WHITE_BALANCE_WAIT_TIME_MS, 'ms delay to allow for white balance to run') 
         else:
             # JPG, bmp ect
-            # TODO: PROPERTIES TO CONFIGURE THE PIXEL FORMAT
             if (self.old_pixel_format != self.current_pixel_format) or self.run_start_up_config:
                 self.old_pixel_format = self.current_pixel_format
                 self._write_reg(self.CAM_REG_FORMAT, self.current_pixel_format) # Set to capture a jpg
                 self._wait_idle()
-                # print('old',self.old_resolution,'new',self.current_resolution_setting)
-                # TODO: PROPERTIES TO CONFIGURE THE RESOLUTION
             if (self.old_resolution != self.current_resolution_setting) or self.run_start_up_config:
                 self.old_resolution = self.current_resolution_setting
                 self._write_reg(self.CAM_REG_CAPTURE_RESOLUTION, self.current_resolution_setting)
@@ -330,7 +327,6 @@ class Camera:
             # Start capturing the photo
             self._set_capture()
 
-    # TODO: After reading the camera data clear the FIFO and reset the camera (so that the first time read can be used)
     def saveJPG(self,filename):
         headflag = 0
         if self.debug_information:
@@ -356,7 +352,6 @@ class Camera:
                 jpg_to_write.write(bytes([image_data_next]))
             
             if (image_data_int == 0xff) and (image_data_next_int == 0xd8):
-                # TODO: Save file to filename
                 headflag = 1
                 jpg_to_write = open(filename,'wb')
                 jpg_to_write.write(bytes([image_data]))
@@ -369,67 +364,6 @@ class Camera:
                 if self.debug_information:
                     print(f"Save at {filename} complete, took {time.time() - start_time:.4f} seconds to save image") 
                 return
-
-
-    # def save_JPG_burst(self):
-        # headflag = 0
-        # print('Saving image, please dont remove power')
-
-        # image_data = 0x00
-        # image_data_next = 0x00
-
-        # image_data_int = 0x00
-        # image_data_next_int = 0x00
-
-        # print("Image length: ", self.received_length)
-
-        # while(self.received_length):
-        #     self._burst_read_FIFO()
-            
-        #     start_bytes = self.image_buffer[0]
-        #     end_bytes = self.image_buffer[self.valid_image_buffer-1]
-            
-        
-#     def _read_byte(self):
-#         self.cs.off()
-#         self.spi_bus.write(bytes([self.SINGLE_FIFO_READ]))
-#         data = self.spi_bus.read(1)
-#         data = self.spi_bus.read(1)
-#         self.cs.on()
-#         self.received_length -= 1
-#         return data
-
-
-    def _burst_read_FIFO(self):
-        #compute how many bytes to read
-        burst_read_length = self.BUFFER_MAX_LENGTH # Default to max length
-        if self.received_length < self.BUFFER_MAX_LENGTH:
-            burst_read_length = self.received_length
-        current_buffer_byte = 0
-        
-        self.cs.value = False
-        self.spi_bus.write(bytes([self.BURST_FIFO_READ]))
-        
-        data = self.spi_bus.read(1)
-        # Throw away first byte on first read
-        if self.first_burst_fifo == True:
-            self.image_buffer[current_buffer_byte] = data
-            current_buffer_byte += 1
-            burst_read_length -= 1
-            if self.debug_information:
-                print('first burst read') 
-            
-        
-        while burst_read_length:
-            data = self.spi_bus.read(1) # Read from camera
-            self.image_buffer[current_buffer_byte] = data # write to buffer
-            current_buffer_byte += 1
-            burst_read_length -= 1
-
-        self.cs.value = True
-        self.received_length -= burst_read_length
-        self.valid_image_buffer = burst_read_length
-
 
     @property
     def resolution(self):
@@ -550,6 +484,12 @@ class Camera:
         self.white_balance_mode = register_value
         self._write_reg(self.CAM_REG_WB_MODE_CONTROL, register_value)
         self._wait_idle()
+    
+    def activate_camera(self):
+        self.cs.value = False
+    
+    def deactivate_camera(self):
+        self.cs.value = True
 
 ##################### INTERNAL FUNCTIONS - HIGH LEVEL #####################
 

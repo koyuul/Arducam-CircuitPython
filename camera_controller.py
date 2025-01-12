@@ -3,6 +3,7 @@ import busio
 import os
 import sqlite3
 import sys
+import threading
 from digitalio import DigitalInOut, Direction
 from time import sleep
 from datetime import datetime, timezone
@@ -13,12 +14,14 @@ from camera import *
 CLOCK_PIN = board.ECSPI1_SCLK
 MISO_PIN = board.ECSPI1_MISO
 MOSI_PIN = board.ECSPI1_MOSI
-GPIO_PIN = board.GPIO_P37
+GPIO_PIN_0 = board.GPIO_P37
+GPIO_PIN_1 = board.GPIO_P29
+GPIO_PIN_2 = board.GPIO_P36
 
 BAUDRATE = 8000000
 
 # refer to camera.py for possible resolutions
-USER_RES = '1920x1080'
+USER_RES = '320x240'
 
 class CameraController:
     def __init__(self):
@@ -27,20 +30,23 @@ class CameraController:
         self.cursor = self.conn.cursor()
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS metadata (
-                image_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                image_path TEXT NOT NULL,
+                main_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                image_id TEXT,
+                image_group INTEGER,
                 request_epoch INTEGER,
                 capture_epoch INTEGER,
                 camera_source INTEGER,
+                image_path TEXT,
                 location_prediction TEXT, -- This should change based on what location prediction features we do
                 has_earth INTEGER, -- SQLite doesnt have integers, so store this as 1=True 0=False
                 has_space INTEGER -- SQLite doesnt have integers, so store this as 1=True 0=False,
             )
         ''')
         self.conn.commit()
-        self.camera_init()
 
-    def camera_init(self):
+        self.cameras_init()
+
+    def cameras_init(self):
         # Initiate a connection to the SPI Bus we're using
         spi = busio.SPI(clock=CLOCK_PIN, MISO=MISO_PIN, MOSI=MOSI_PIN)
 
@@ -54,54 +60,72 @@ class CameraController:
             print("[CAMERA]: Could not lock SPI bus") #TODO: handle this error better...
             exit()
         
-        # Initialize a camera object
-        cs = DigitalInOut(GPIO_PIN)
-        cs.direction = digitalio.Direction.OUTPUT  # Set CS pin as output
-        self.camera = Camera(spi, cs)
-        self.camera.resolution = USER_RES
+        # Initializes all chip select pins
+        cs0 = DigitalInOut(GPIO_PIN_0)
+        cs0.direction = digitalio.Direction.OUTPUT 
+
+        cs1 = DigitalInOut(GPIO_PIN_1)
+        cs1.direction = digitalio.Direction.OUTPUT
+
+        cs2 = DigitalInOut(GPIO_PIN_2)
+        cs2.direction = digitalio.Direction.OUTPUT
+
+        # Initalize camera objects
+        cam0 = Camera(spi, cs0)
+        cam0.resolution = USER_RES
+
+        cam1 = Camera(spi, cs1)
+        cam1.resolution = USER_RES
+
+        cam2 = Camera(spi, cs2)
+        cam2.resolution = USER_RES
+
+        self.cameras = [cam0, cam1, cam2]
     
     def execute(self):
         operation = sys.argv[1]
         if (operation == "STD_CAPTURE"): # take a single image capture
-                print("[CAMERA]: Executing STD_CAPTURE...")
+                # TODO: Error check these sys args
                 camera_enable_code = sys.argv[2]
                 request_epoch = sys.argv[3]
 
-                # TODO: add functionality for multiple captures
-                
-                # Capture the image (into the arducam's buffer), and note the time it was taken
-                self.camera.capture_jpg()
+                previous_image_group = self.cursor.execute("SELECT MAX(image_group) FROM metadata").fetchone()
+                image_group = previous_image_group[0]+1 if previous_image_group is not None and previous_image_group[0] is not None else 1
+                image_folder = f"{os.path.expanduser('~/images')}/{image_group}"
+                os.makedirs(image_folder, exist_ok=True)
+
+                self.capture_images(camera_enable_code, request_epoch, image_group, image_folder)
+
+                thread = threading.Thread(target=self.process_images, args=(camera_enable_code, request_epoch, image_group, image_folder))
+                thread.start()
+
+    def capture_images(self, camera_enable_code, request_epoch, image_group, image_folder):
+        for i in range(0, len(camera_enable_code)):
+            current_flag = camera_enable_code[i]
+            if (current_flag == "1"):
+                self.cameras[i].capture_jpg()
                 capture_epoch = int(datetime.now(tz=timezone.utc).timestamp())
                 sleep(0.05)
-                print("[CAMERA]: Capture complete, now saving image. This may take a while...")
-
-                image_metadata = {
-                    # image_id is automatically incrementally set
-                    "image_path": "", # Temporarily unset until we find the image_id
-                    "request_epoch": request_epoch,
-                    "capture_epoch": capture_epoch,
-                    "camera_source": 1, # TODO: this should change based on requested cameras
-                }
+                image_id = str(image_group) + "_" + str(i)
+                image_path = f"{image_folder}/{image_id}.jpg"
 
                 # Enter image metadata into the metadata table.
                 self.cursor.execute(
-                    "INSERT INTO metadata(image_path, request_epoch, capture_epoch, camera_source) VALUES(?, ?, ?, ?)",
-                    ( image_metadata["image_path"], image_metadata["request_epoch"], image_metadata["capture_epoch"], image_metadata["camera_source"] )
+                    "INSERT INTO metadata(image_id, image_group, request_epoch, capture_epoch, camera_source, image_path) VALUES(?, ?, ?, ?, ?, ?)",
+                    ( image_id, image_group, request_epoch, capture_epoch, i, image_path)
                 )
-
-                # Get the image_id, create the path, and save it
-                image_id = self.cursor.lastrowid
-                image_folder = f"{os.path.expanduser('~/images')}/{image_id}"
-                image_path = f"{image_folder}/{image_id}.jpg"
-                os.makedirs(image_folder, exist_ok=True)
-                self.camera.saveJPG(image_path)
-
-                # Finally, update the metadata row to contain the path and commit all changes
-                self.cursor.execute("UPDATE metadata SET image_path = ? where image_id = ?", (image_path, image_id))
                 self.conn.commit()
 
-                print(f"[CAMERA]: Completed the request received at {request_epoch}, captured at {capture_epoch}. Saved into {image_path}.")
-     # TODO: figure out how to return this 
+                print(f"[CAM{i}]: Capture complete")
+
+    def process_images(self, camera_enable_code, request_epoch, image_group, image_folder): # Capture the image (into the arducam's buffer), and note the time it was taken
+        for i in range(0, len(camera_enable_code)):
+            current_flag = camera_enable_code[i]
+            if (current_flag == "1"):
+                image_id = str(image_group) + "_" + str(i)
+                image_path = f"{image_folder}/{image_id}.jpg"
+                self.cameras[i].saveJPG(image_path)
+                print(f"[CAM{i}]: Completed the request received at {request_epoch}. Saved into {image_path}.")
 
 cc = CameraController() # Currently a hardcoded example command
 cc.execute()
