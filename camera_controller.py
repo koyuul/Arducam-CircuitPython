@@ -83,21 +83,36 @@ class CameraController:
         self.cameras = [cam0, cam1, cam2]
     
     def execute(self):
-        operation = sys.argv[1]
-        if (operation == "STD_CAPTURE"): # take a single image capture
-                # TODO: Error check these sys args
-                camera_enable_code = sys.argv[2]
-                request_epoch = sys.argv[3]
+        kwargs = self.parse_kwargs()
+        if (kwargs["operation"] == "STD_CAPTURE"): # take a single image capture
+            if (kwargs["resolution"] is not None):
+                for cam in self.cameras:
+                    cam.resolution = kwargs["resolution"]
+                print(f"[CAMERA]: Changing resolution to {kwargs["resolution"]}")
+            previous_image_group = self.cursor.execute("SELECT MAX(image_group) FROM metadata").fetchone()
+            image_group = previous_image_group[0]+1 if previous_image_group is not None and previous_image_group[0] is not None else 1
+            image_folder = f"{os.path.expanduser('~/images')}/{image_group}"
+            os.makedirs(image_folder, exist_ok=True)
 
-                previous_image_group = self.cursor.execute("SELECT MAX(image_group) FROM metadata").fetchone()
-                image_group = previous_image_group[0]+1 if previous_image_group is not None and previous_image_group[0] is not None else 1
-                image_folder = f"{os.path.expanduser('~/images')}/{image_group}"
-                os.makedirs(image_folder, exist_ok=True)
+            self.capture_images(kwargs["camera_enable_code"], kwargs["request_epoch"], image_group, image_folder)
 
-                self.capture_images(camera_enable_code, request_epoch, image_group, image_folder)
+            thread = threading.Thread(target=self.process_images, args=(kwargs["camera_enable_code"], kwargs["request_epoch"], image_group, image_folder))
+            thread.start()
 
-                thread = threading.Thread(target=self.process_images, args=(camera_enable_code, request_epoch, image_group, image_folder))
-                thread.start()
+        # if (operation == "UPDATE_RES"):
+        #     new_resolution = sys.argv[2]
+        #     for (cam in self.cameras):
+        #         self.cam.resolution = new_resolution
+
+    def parse_kwargs(self):
+        kwargs = {}
+        for arg in sys.argv[1:]:
+            if "=" in arg:
+                key, value = arg.split("=")
+                kwargs[key] = value
+            else:
+                print("[CAMERA] Detected invalid kwarg, ensure key=value format is used")
+        return kwargs
 
     def capture_images(self, camera_enable_code, request_epoch, image_group, image_folder):
         for i in range(0, len(camera_enable_code)):
